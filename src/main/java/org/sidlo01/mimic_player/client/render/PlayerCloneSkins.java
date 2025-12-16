@@ -8,6 +8,7 @@ import net.minecraft.client.resources.DefaultPlayerSkin;
 import net.minecraft.client.resources.SkinManager;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.ResourceLocation;
+import org.sidlo01.mimic_player.client.ClientServerSkinCache;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -52,8 +53,11 @@ public final class PlayerCloneSkins {
         String name = profile.getName() == null ? "Steve" : profile.getName();
         UUID key = (profile.getId() != null) ? profile.getId() : offlineUuid(name);
 
-        // 1) Local override: <gameDir>/skins/<name>.png
-        ResourceLocation local = tryLoadLocalSkin(name);
+        // inside getSkinTexture(profile) before remote lookup:
+        ResourceLocation serverLocal = tryLoadLocalSkin(ClientServerSkinCache.serverSkinFile(name+ ".png").toFile(), "server/" + name);
+        if (serverLocal != null) return serverLocal;
+
+        ResourceLocation local = tryLoadLocalSkin(new File(Minecraft.getInstance().gameDirectory, "skins/" + name + ".png"), "local/" + name);
         if (local != null) return local;
 
         // 2) Remote (real Mojang skin) if we have it cached already
@@ -74,40 +78,37 @@ public final class PlayerCloneSkins {
      * Loads <gameDir>/skins/<name>.png as a DynamicTexture and returns its ResourceLocation.
      * Caches by name + lastModified to avoid re-reading every frame.
      */
-    private static ResourceLocation tryLoadLocalSkin(String name) {
-        // Your .minecraft directory (same place as mods/, config/)
-        File gameDir = Minecraft.getInstance().gameDirectory;
-        File skinsDir = new File(gameDir, "skins");
-        File png = new File(skinsDir, name + ".png");
-
-        if (!png.exists() || !png.isFile()) return null;
+    private static ResourceLocation tryLoadLocalSkin(File png, String cacheKey) {
+        if (png == null || !png.exists() || !png.isFile()) return null;
 
         long lastModified = png.lastModified();
-        LocalSkin cached = LOCAL_CACHE.get(name);
 
-        // If cached and unchanged, reuse.
+        // Cache by cacheKey (NOT by "name") so different sources don't collide.
+        LocalSkin cached = LOCAL_CACHE.get(cacheKey);
         if (cached != null && cached.lastModified == lastModified && cached.texture != null) {
             return cached.texture;
         }
 
-        // If file changed (or first time), load/reload.
+        // Load / reload from disk
         try (FileInputStream in = new FileInputStream(png)) {
             NativeImage img = NativeImage.read(in);
 
-            // Create / replace a dynamic texture
             DynamicTexture dyn = new DynamicTexture(img);
 
-            // ResourceLocation used by TextureManager.
-            ResourceLocation id = new ResourceLocation(NAMESPACE, "local_skins/" + sanitize(name));
+            // ResourceLocation path MUST be stable and valid -> sanitize(cacheKey)
+            // Put everything under one folder namespace to avoid collisions.
+            ResourceLocation id = ResourceLocation.fromNamespaceAndPath(
+                    NAMESPACE,
+                    "disk_skins/" + sanitize(cacheKey)
+            );
 
-            // Register (re-registering same id is fine; it replaces the old texture binding)
             Minecraft.getInstance().getTextureManager().register(id, dyn);
 
-            LOCAL_CACHE.put(name, new LocalSkin(id, lastModified));
+            LOCAL_CACHE.put(cacheKey, new LocalSkin(id, lastModified));
             return id;
         } catch (Throwable t) {
-            // If PNG is broken, don’t crash rendering — just ignore local override.
-            LOCAL_CACHE.put(name, new LocalSkin(null, lastModified));
+            // If PNG is broken, don’t crash rendering — just ignore this override.
+            LOCAL_CACHE.put(cacheKey, new LocalSkin(null, lastModified));
             return null;
         }
     }

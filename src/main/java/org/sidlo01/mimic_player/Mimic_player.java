@@ -1,8 +1,10 @@
 package org.sidlo01.mimic_player;
 
+import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import org.sidlo01.mimic_player.config.PlayerNPCConfig;
 import org.sidlo01.mimic_player.registry.ModEntities;
 import org.sidlo01.mimic_player.server.ModCommands;
+import org.sidlo01.mimic_player.network.SkinSync;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.ModLoadingContext;
@@ -34,5 +36,9 @@ public class Mimic_player {
 
         // Register Forge (game) event handlers.
         MinecraftForge.EVENT_BUS.register(ModCommands.class);
+
+        SkinSync.register();
+        modBus.addListener((FMLCommonSetupEvent e) -> e.enqueueWork(SkinSync::register));
     }
+
 }

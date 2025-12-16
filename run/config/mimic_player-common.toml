@@ -7,5 +7,5 @@
 	#If a name is currently online, their real UUID/skin will be used.
 	#If not online, the mod will try to resolve the name using the server's GameProfile cache.
 	#If that fails (offline servers / no cache), the clone will fall back to a default (Steve/Alex) skin.
-	extraNames = ["Notch", "jeb_","verso"]
+	extraNames = ["Notch", "jeb_", "verso"]
 
