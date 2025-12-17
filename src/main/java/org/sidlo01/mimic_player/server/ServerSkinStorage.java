@@ -1,87 +1,66 @@
 package org.sidlo01.mimic_player.server;
 
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraftforge.fml.loading.FMLPaths;
+import net.minecraft.world.level.storage.LevelResource;
 import net.minecraftforge.network.PacketDistributor;
-import org.sidlo01.mimic_player.Mimic_player;
 import org.sidlo01.mimic_player.network.SkinSync;
 import org.sidlo01.mimic_player.network.packet.S2CSkinFilePacket;
 import org.sidlo01.mimic_player.network.packet.S2CSkinManifestPacket;
 
-import java.io.InputStream;
 import java.nio.file.*;
 import java.security.MessageDigest;
 import java.util.*;
 
 /**
- * Server-side skin folder:
- *   config/mimic_player/server_skins/
+ * Server-side skins (the ones that sync to clients) are stored in:
+ *   <world>/skins/
  *
- * Place PNG files there. Clients will cache them under:
- *   <clientGameDir>/skins/server/<serverKey>/
+ * This works for:
+ * - Dedicated servers
+ * - LAN (integrated server host)
+ *
+ * Clients cache them into:
+ *   .minecraft/skins/server/<serverKey>/
  */
 public final class ServerSkinStorage {
 
-    // If you want "first run default skins" on server, bundle them in your jar:
-    // src/main/resources/assets/mimic_player/server_default_skins/<filename>
-    private static final List<String> SERVER_DEFAULTS = List.of(
-            "NPC_1.png",
-            "NPC_2.png"
-    );
-
-    public static Path serverSkinDir() {
-        return FMLPaths.CONFIGDIR.get()
-                .resolve(Mimic_player.MODID)
-                .resolve("server_skins");
+    public static Path worldSkinDir(MinecraftServer server) {
+        return server.getWorldPath(LevelResource.ROOT).resolve("skins");
     }
 
-    /** Call on server start: create folder, optionally copy bundled defaults. */
-    public static void ensureFolderAndDefaults() {
-        try {
-            Path dir = serverSkinDir();
-            if (Files.exists(dir)) return;
-
-            Files.createDirectories(dir);
-
-            // Copy defaults if present in jar
-            for (String file : SERVER_DEFAULTS) {
-                copyBundledDefaultIfPresent(dir, file);
-            }
-        } catch (Throwable ignored) {
-        }
+    public static void ensureWorldSkinFolder(MinecraftServer server) {
+        try { Files.createDirectories(worldSkinDir(server)); }
+        catch (Throwable ignored) {}
     }
 
-    /** Send manifest (filename -> sha256) to a player. */
     public static void sendManifestTo(ServerPlayer player) {
-        Map<String, String> manifest = buildManifest();
+        Map<String, String> manifest = buildManifest(player.server);
         SkinSync.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new S2CSkinManifestPacket(manifest));
     }
 
-    /** Send requested files to player. */
     public static void sendFilesTo(ServerPlayer player, List<String> requested) {
-        Path base = serverSkinDir();
+        Path base = worldSkinDir(player.server);
+
         for (String raw : requested) {
             String safe = sanitizePngFileName(raw);
             if (safe == null) continue;
 
             Path file = base.resolve(safe).normalize();
-            if (!file.startsWith(base)) continue; // anti path traversal
+            if (!file.startsWith(base)) continue;
             if (!Files.exists(file) || !Files.isRegularFile(file)) continue;
 
             try {
                 byte[] bytes = Files.readAllBytes(file);
-                // (Optional) size guard; you can tighten this.
-                if (bytes.length > 2_000_000) continue;
-
+                if (bytes.length > 2_000_000) continue; // size guard
                 SkinSync.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new S2CSkinFilePacket(safe, bytes));
-            } catch (Throwable ignored) {
-            }
+            } catch (Throwable ignored) {}
         }
     }
 
-    private static Map<String, String> buildManifest() {
+    private static Map<String, String> buildManifest(MinecraftServer server) {
         Map<String, String> out = new HashMap<>();
-        Path dir = serverSkinDir();
+        Path dir = worldSkinDir(server);
 
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir, "*.png")) {
             for (Path p : stream) {
@@ -89,8 +68,8 @@ public final class ServerSkinStorage {
                 String hash = sha256Hex(p);
                 if (hash != null) out.put(name, hash);
             }
-        } catch (Throwable ignored) {
-        }
+        } catch (Throwable ignored) {}
+
         return out;
     }
 
@@ -111,23 +90,8 @@ public final class ServerSkinStorage {
     private static String sanitizePngFileName(String raw) {
         if (raw == null) return null;
         if (!raw.toLowerCase(Locale.ROOT).endsWith(".png")) return null;
-        // allow only safe chars
         String s = raw.replaceAll("[^a-zA-Z0-9._\\-]", "_");
-        if (s.isBlank()) return null;
-        return s;
-    }
-
-    private static void copyBundledDefaultIfPresent(Path dir, String fileName) {
-        Path out = dir.resolve(fileName);
-        if (Files.exists(out)) return;
-
-        String resourcePath = "assets/" + Mimic_player.MODID + "/server_default_skins/" + fileName;
-
-        try (InputStream in = ServerSkinStorage.class.getClassLoader().getResourceAsStream(resourcePath)) {
-            if (in == null) return;
-            Files.copy(in, out, StandardCopyOption.REPLACE_EXISTING);
-        } catch (Throwable ignored) {
-        }
+        return s.isBlank() ? null : s;
     }
 
     private ServerSkinStorage() {}

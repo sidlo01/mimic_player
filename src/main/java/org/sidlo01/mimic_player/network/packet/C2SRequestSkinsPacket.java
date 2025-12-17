@@ -10,9 +10,10 @@ import java.util.List;
 import java.util.function.Supplier;
 
 /**
- * Client -> Server: "Send me these specific skin files".
+ * Client -> Server: request concrete PNG files listed in manifest.
  */
 public final class C2SRequestSkinsPacket {
+
     public final List<String> files;
 
     public C2SRequestSkinsPacket(List<String> files) {
@@ -31,13 +32,12 @@ public final class C2SRequestSkinsPacket {
         return new C2SRequestSkinsPacket(files);
     }
 
-    public static void handle(C2SRequestSkinsPacket msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer sender = ctx.get().getSender();
-            if (sender == null) return;
+    public static void handle(C2SRequestSkinsPacket msg, Supplier<NetworkEvent.Context> ctxSup) {
+        NetworkEvent.Context ctx = ctxSup.get();
+        ServerPlayer sender = ctx.getSender();
+        if (sender == null) return;
 
-            ServerSkinStorage.sendFilesTo(sender, msg.files);
-        });
-        ctx.get().setPacketHandled(true);
+        ctx.enqueueWork(() -> ServerSkinStorage.sendFilesTo(sender, msg.files));
+        ctx.setPacketHandled(true);
     }
 }

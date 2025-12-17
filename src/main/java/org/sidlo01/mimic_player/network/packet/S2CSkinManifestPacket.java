@@ -9,18 +9,19 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 /**
- * Server -> Client: manifest of available server skins: filename -> sha256.
+ * Server -> Client: manifest of <world>/skins
  */
 public final class S2CSkinManifestPacket {
-    public final Map<String, String> fileToSha256;
 
-    public S2CSkinManifestPacket(Map<String, String> fileToSha256) {
-        this.fileToSha256 = fileToSha256;
+    public final Map<String, String> manifest;
+
+    public S2CSkinManifestPacket(Map<String, String> manifest) {
+        this.manifest = manifest;
     }
 
     public static void encode(S2CSkinManifestPacket msg, FriendlyByteBuf buf) {
-        buf.writeVarInt(msg.fileToSha256.size());
-        for (var e : msg.fileToSha256.entrySet()) {
+        buf.writeVarInt(msg.manifest.size());
+        for (var e : msg.manifest.entrySet()) {
             buf.writeUtf(e.getKey());
             buf.writeUtf(e.getValue());
         }
@@ -30,15 +31,14 @@ public final class S2CSkinManifestPacket {
         int n = buf.readVarInt();
         Map<String, String> map = new HashMap<>();
         for (int i = 0; i < n; i++) {
-            String file = buf.readUtf();
-            String hash = buf.readUtf();
-            map.put(file, hash);
+            map.put(buf.readUtf(), buf.readUtf());
         }
         return new S2CSkinManifestPacket(map);
     }
 
-    public static void handle(S2CSkinManifestPacket msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> ClientServerSkinCache.onManifest(msg.fileToSha256));
-        ctx.get().setPacketHandled(true);
+    public static void handle(S2CSkinManifestPacket msg, Supplier<NetworkEvent.Context> ctxSup) {
+        NetworkEvent.Context ctx = ctxSup.get();
+        ctx.enqueueWork(() -> ClientServerSkinCache.onManifest(msg.manifest));
+        ctx.setPacketHandled(true);
     }
 }

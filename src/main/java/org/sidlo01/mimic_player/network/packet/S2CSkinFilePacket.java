@@ -7,10 +7,11 @@ import org.sidlo01.mimic_player.client.ClientServerSkinCache;
 import java.util.function.Supplier;
 
 /**
- * Server -> Client: one skin file (png bytes).
+ * Server -> Client: one PNG file
  */
 public final class S2CSkinFilePacket {
-    public final String fileName;
+
+    public final String fileName; // example: "notch.png" or "Notch.png"
     public final byte[] bytes;
 
     public S2CSkinFilePacket(String fileName, byte[] bytes) {
@@ -20,17 +21,20 @@ public final class S2CSkinFilePacket {
 
     public static void encode(S2CSkinFilePacket msg, FriendlyByteBuf buf) {
         buf.writeUtf(msg.fileName);
-        buf.writeByteArray(msg.bytes); // varint length + bytes
+        buf.writeVarInt(msg.bytes.length);
+        buf.writeByteArray(msg.bytes);
     }
 
     public static S2CSkinFilePacket decode(FriendlyByteBuf buf) {
         String f = buf.readUtf();
-        byte[] b = buf.readByteArray();
-        return new S2CSkinFilePacket(f, b);
+        int len = buf.readVarInt();
+        byte[] bytes = buf.readByteArray(len);
+        return new S2CSkinFilePacket(f, bytes);
     }
 
-    public static void handle(S2CSkinFilePacket msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> ClientServerSkinCache.onFile(msg.fileName, msg.bytes));
-        ctx.get().setPacketHandled(true);
+    public static void handle(S2CSkinFilePacket msg, Supplier<NetworkEvent.Context> ctxSup) {
+        NetworkEvent.Context ctx = ctxSup.get();
+        ctx.enqueueWork(() -> ClientServerSkinCache.onFile(msg.fileName, msg.bytes));
+        ctx.setPacketHandled(true);
     }
 }
